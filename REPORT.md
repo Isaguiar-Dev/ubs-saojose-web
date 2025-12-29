@@ -8,84 +8,86 @@
 
 ## 1. Resumo Executivo
 
-A auditoria analisou o código sob a ótica de engenharia de software, manutenibilidade e experiência do usuário (UX), desconsiderando restrições de Design System governamental.
+A auditoria técnica avaliou o projeto focando em manutenibilidade, escalabilidade e performance, desconsiderando restrições de Design System governamental.
 
-O projeto demonstra boas escolhas tecnológicas (Vite, Tailwind, Lazy Loading), porém sofre de **débitos técnicos severos** que comprometem a escalabilidade e a manutenção a longo prazo. O uso excessivo de estilos inline e a falta de separação de responsabilidades (componentes definidos dentro de páginas) são os pontos mais críticos.
+O projeto apresenta uma estrutura organizada e boas práticas modernas (Vite, Lazy Loading), mas possui **débitos técnicos críticos** que ameaçam sua evolução. O uso disseminado de estilos inline (impedindo temas globais) e a duplicação de lógica para responsividade são os maiores ofensores. Além disso, foram identificados gargalos de performance no consumo do Firebase.
 
 ---
 
 ## 2. Classificação de Problemas
 
-### 🔴 Alta Gravidade (Crítico - Engenharia & Clean Code)
+### 🔴 Alta Gravidade (Crítico - Engenharia & Arquitetura)
 
-#### 2.1. Uso Abusivo de Estilos Inline (Anti-Padrão React/CSS)
-**Descrição:** Diversos componentes forçam estilos visuais diretamente na tag HTML via `style={{...}}`, especialmente para fontes.
-**Contexto:** Arquivos como `Login.jsx`, `Vacinas.jsx`, `EstoqueVacinas.jsx` contêm centenas de repetições de `fontFamily: 'Arial, "Helvetica Neue"...'`.
+#### 2.1. Uso Abusivo de Estilos Inline (Clean Code / CSS)
+**Descrição:** Dezenas de arquivos (`Login.jsx`, `Vacinas.jsx`) aplicam estilos visuais diretamente no JSX, sobrescrevendo o CSS global.
+**Contexto:** `style={{ fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif' }}` aparece repetidamente.
 **Impacto Técnico:**
-- **Manutenibilidade Zero:** Alterar a fonte do site exigiria editar manualmente centenas de linhas em dezenas de arquivos.
-- **Bloat de Código:** Aumenta desnecessariamente o tamanho do arquivo transferido.
-- **Specificity Wars:** Estilos inline têm precedência sobre classes CSS/Tailwind, tornando difícil sobrescrever estilos quando necessário.
-**Recomendação:** Remover todos os atributos `style` e configurar a fonte globalmente no `tailwind.config.js` ou `index.css`.
+- **Bloqueio de Evolução Visual:** É impossível alterar a tipografia do site globalmente sem editar centenas de arquivos.
+- **Peso do Bundle:** Repetição desnecessária de strings de estilo aumenta o tamanho do JavaScript.
+- **Conflito de Especificidade:** Inline styles vencem classes CSS, dificultando o uso de utilitários do Tailwind.
+**Recomendação:** Remover **todos** os estilos inline e definir a família de fontes no `tailwind.config.js`.
 
-#### 2.2. Componentização Incorreta (Declarações Aninhadas)
-**Descrição:** Definição de componentes auxiliares (ex: `PageContainer`, `InfoBox`, `Alert`) dentro do escopo do arquivo da página (ex: `Vacinas.jsx`).
+#### 2.2. Componentização Anti-Padrão (Nested Components)
+**Descrição:** Declaração de componentes (`InfoBox`, `Alert`) dentro do corpo de outro componente ou arquivo de página.
 **Impacto Técnico:**
-- **Performance:** O React pode recriar esses componentes a cada renderização da página pai, causando perda de estado e processamento inútil.
-- **Reutilização Nula:** Um `Alert` criado dentro de `Vacinas.jsx` não pode ser usado em `Home.jsx`, gerando duplicação de código.
-- **Testabilidade:** Impossível testar esses componentes isoladamente.
-**Recomendação:** Extrair esses componentes para arquivos próprios em `src/components/common/`.
+- **Performance:** O React recria a definição da função a cada renderização, forçando o "remount" dos componentes filhos e perdendo estado/foco.
+- **Reutilização:** Impede que outras páginas usem esses elementos comuns.
+**Recomendação:** Mover imediatamente para `src/components/common/`.
+
+#### 2.3. Responsividade via Duplicação de DOM
+**Descrição:** Em vez de usar CSS responsivo, o código duplica o conteúdo HTML: um bloco para `hidden md:block` (Desktop) e outro para `md:hidden` (Mobile).
+**Exemplo:** Tabela de horários em `Vacinas.jsx`.
+**Impacto Técnico:**
+- **Risco de Inconsistência:** Alterar uma informação requer editar dois lugares diferentes.
+- **Manutenção Dobrada:** Qualquer ajuste de layout deve ser replicado.
+**Recomendação:** Usar classes utilitárias (ex: `grid-cols-1 md:grid-cols-3`) para adaptar o *mesmo* HTML a diferentes telas.
 
 ---
 
-### 🟡 Média Gravidade (Importante - Manutenibilidade & Consistência)
+### 🟡 Média Gravidade (Performance & Dados)
 
-#### 2.3. Hardcoded Hex Colors vs. Tailwind Tokens
-**Descrição:** Uso frequente de cores hexadecimais arbitrárias (ex: `#003882`) em vez da paleta definida no Tailwind (`bg-primary-800`).
-**Impacto:**
-- **Inconsistência Visual:** Pequenas variações de tom (ex: um azul `#003880` e outro `#003882`) passam despercebidas no código mas degradam o polimento visual.
-- **Dificuldade de Tema:** Impossibilita "Dark Mode" ou mudanças de branding futuras sem refatoração massiva.
-**Recomendação:** Padronizar todas as cores no `tailwind.config.js` e usar apenas classes (ex: `text-blue-900`).
+#### 2.4. Filtragem de Dados no Cliente (Firebase)
+**Descrição:** A função `buscarCampanhas` baixa todos os documentos da coleção e depois filtra por data (`dataFim`) via JavaScript no navegador (`campanhas.filter(...)`).
+**Impacto Técnico:**
+- **Custo & Performance:** Conforme o banco cresce, o usuário baixa megabytes de dados inúteis, consumindo banda e aumentando a conta do Firebase (leituras desnecessárias).
+**Recomendação:** Implementar índices compostos no Firestore e realizar a filtragem (`where('dataFim', '>=', new Date())`) diretamente na query do banco de dados.
 
-#### 2.4. Dados "Chumbados" no JSX (Hardcoded Content)
-**Descrição:** Tabelas de horários, listas de endereços e telefones estão escritos diretamente no código da interface.
-**Impacto:** Desenvolvedores precisam atuar para mudar um número de telefone. Isso mistura "Dados" com "Apresentação".
-**Recomendação:** Mover esses dados para arquivos JSON/JavaScript de configuração ou para o banco de dados.
+#### 2.5. Hardcoded Hex Colors
+**Descrição:** Uso de cores hexadecimais soltas (ex: `#003882`) em vez de tokens do Tailwind (`bg-primary-800`).
+**Impacto:** Dificulta a manutenção de uma identidade visual consistente e impede a implementação fácil de temas (Dark Mode/Alto Contraste).
+**Recomendação:** Padronizar cores no `tailwind.config.js`.
 
-#### 2.5. Duplicação de Código para Responsividade
-**Descrição:** Em `Vacinas.jsx`, o conteúdo da tabela de horários é duplicado: existe uma estrutura HTML para Desktop e outra totalmente separada para Mobile.
-**Impacto:** Risco altíssimo de divergência de informação (atualizar o horário no desktop e esquecer do mobile).
-**Recomendação:** Usar CSS (Grid/Flex) para adaptar o *mesmo* conteúdo HTML para diferentes telas.
+#### 2.6. Conteúdo "Chumbado" no Código
+**Descrição:** Tabelas de horários, endereços e telefones estão escritos diretamente no JSX das páginas.
+**Recomendação:** Extrair para constantes (`src/data/constants.js`) ou mover para o CMS (Firestore).
 
 ---
 
-### 🟢 Baixa Gravidade (Melhorias de Polimento)
+### 🟢 Baixa Gravidade (Polimento)
 
-#### 2.6. Componentes Extensos ("God Components")
-**Descrição:** `Home.jsx` possui ~450 linhas, misturando lógica de galeria, carrossel e apresentação.
-**Solução:** Quebrar em sub-componentes menores (`HomeHero`, `HomeContact`, `HomeGallery`) para facilitar a leitura.
+#### 2.7. Componentes "Deuses"
+**Descrição:** `Home.jsx` acumula muitas responsabilidades (Hero, Galeria, Contato).
+**Recomendação:** Refatorar em componentes menores (`HomeHero`, `HomeContact`) para melhorar a legibilidade.
 
-#### 2.7. Acessibilidade (Labels e Foco)
-**Descrição:** Alguns botões de ícone (ex: redes sociais no rodapé) não possuem texto legível para leitores de tela (`aria-label`).
-**Solução:** Adicionar `aria-label` descritivos.
-
----
-
-## 3. Checklist de Ação Prioritária
-
-1.  **Limpeza de Código (Refatoração Imediata):**
-    - [ ] **Eliminar estilos inline:** Remover `style={{ fontFamily... }}` de todo o projeto. Deixar o Tailwind gerenciar a tipografia.
-    - [ ] **Extrair Componentes:** Mover `InfoBox`, `Alert`, `PageContainer` de dentro das páginas para a pasta `components`.
-
-2.  **Organização Visual:**
-    - [ ] **Auditoria de Cores:** Substituir hexadecimais soltos por classes do Tailwind para garantir consistência visual profissional.
-
-3.  **Arquitetura de Dados:**
-    - [ ] **Centralizar Informações:** Criar um arquivo constante para telefones/endereços para evitar alterações manuais em múltiplos arquivos.
+#### 2.8. Acessibilidade Básica
+**Descrição:** Links de redes sociais e botões de ícone sem `aria-label`.
+**Recomendação:** Adicionar descrições textuais para leitores de tela.
 
 ---
 
-## 4. Conclusão Final
+## 3. Plano de Ação (Prioridades)
 
-O site tem uma aparência profissional e moderna, mas o código "por trás das cortinas" apresenta fragilidades de engenharia que dificultarão o crescimento do projeto.
+1.  **Saneamento do Código (Semana 1):**
+    - [ ] Remover estilos inline de fontes.
+    - [ ] Extrair componentes aninhados para arquivos globais.
+2.  **Performance (Semana 1):**
+    - [ ] Otimizar query do Firestore em `campanhasService.js` para filtrar data no servidor.
+3.  **Arquitetura (Semana 2):**
+    - [ ] Centralizar dados estáticos (telefones/horários) em arquivos de configuração.
+    - [ ] Refatorar layouts duplicados (Mobile/Desktop) para usar CSS responsivo.
 
-A prioridade absoluta deve ser a **limpeza do código (Clean Code)**: remover estilos inline e organizar a estrutura de componentes. Isso elevará o projeto de um "protótipo funcional" para um produto de software profissional e manutenível.
+---
+
+## 4. Conclusão
+
+O projeto possui uma base tecnológica moderna, mas precisa de rigor na engenharia de software. A correção dos estilos inline e da arquitetura de componentes é urgente para garantir que o sistema possa escalar e ser mantido por uma equipe profissional.
